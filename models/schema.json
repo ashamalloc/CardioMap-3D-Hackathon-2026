@@ -1,0 +1,459 @@
+{
+  "fields": [
+    {
+      "name": "Age",
+      "kind": "number",
+      "default": 58.0,
+      "min": 30.0,
+      "max": 86.0,
+      "step": 1
+    },
+    {
+      "name": "Weight",
+      "kind": "number",
+      "default": 74.0,
+      "min": 48.0,
+      "max": 120.0,
+      "step": 1
+    },
+    {
+      "name": "Length",
+      "kind": "number",
+      "default": 165.0,
+      "min": 140.0,
+      "max": 188.0,
+      "step": 1
+    },
+    {
+      "name": "Sex",
+      "kind": "select",
+      "options": [
+        "Male",
+        "Fmale"
+      ],
+      "default": "Male"
+    },
+    {
+      "name": "BMI",
+      "kind": "number",
+      "default": 26.775510204081634,
+      "min": 18.115412710007302,
+      "max": 40.90065778377467,
+      "step": 0.1
+    },
+    {
+      "name": "DM",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "HTN",
+      "kind": "number",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "Current Smoker",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "EX-Smoker",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "FH",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "Obesity",
+      "kind": "select",
+      "options": [
+        "Y",
+        "N"
+      ],
+      "default": "Y"
+    },
+    {
+      "name": "CRF",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "CVA",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Airway disease",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "CHF",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "DLP",
+      "kind": "select",
+      "options": [
+        "Y",
+        "N"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "BP",
+      "kind": "number",
+      "default": 130.0,
+      "min": 90.0,
+      "max": 190.0,
+      "step": 1
+    },
+    {
+      "name": "PR",
+      "kind": "number",
+      "default": 70.0,
+      "min": 50.0,
+      "max": 110.0,
+      "step": 1
+    },
+    {
+      "name": "Edema",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "Weak Peripheral Pulse",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Lung rales",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Systolic Murmur",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Diastolic Murmur",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Typical Chest Pain",
+      "kind": "number",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "Dyspnea",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Function Class",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 3.0,
+      "step": 1
+    },
+    {
+      "name": "Atypical",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Nonanginal",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Exertional CP",
+      "kind": "select",
+      "options": [
+        "N"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "LowTH Ang",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Q Wave",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "St Elevation",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "St Depression",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "Tinversion",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 1
+    },
+    {
+      "name": "LVH",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "Poor R Progression",
+      "kind": "select",
+      "options": [
+        "N",
+        "Y"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "BBB",
+      "kind": "select",
+      "options": [
+        "N",
+        "LBBB",
+        "RBBB"
+      ],
+      "default": "N"
+    },
+    {
+      "name": "FBS",
+      "kind": "number",
+      "default": 98.0,
+      "min": 62.0,
+      "max": 400.0,
+      "step": 1
+    },
+    {
+      "name": "CR",
+      "kind": "number",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.2,
+      "step": 0.1
+    },
+    {
+      "name": "TG",
+      "kind": "number",
+      "default": 122.0,
+      "min": 37.0,
+      "max": 1050.0,
+      "step": 1
+    },
+    {
+      "name": "LDL",
+      "kind": "number",
+      "default": 100.0,
+      "min": 18.0,
+      "max": 232.0,
+      "step": 1
+    },
+    {
+      "name": "HDL",
+      "kind": "number",
+      "default": 39.0,
+      "min": 15.9,
+      "max": 111.0,
+      "step": 0.1
+    },
+    {
+      "name": "BUN",
+      "kind": "number",
+      "default": 16.0,
+      "min": 6.0,
+      "max": 52.0,
+      "step": 1
+    },
+    {
+      "name": "ESR",
+      "kind": "number",
+      "default": 15.0,
+      "min": 1.0,
+      "max": 90.0,
+      "step": 1
+    },
+    {
+      "name": "HB",
+      "kind": "number",
+      "default": 13.2,
+      "min": 8.9,
+      "max": 17.6,
+      "step": 0.1
+    },
+    {
+      "name": "K",
+      "kind": "number",
+      "default": 4.2,
+      "min": 3.0,
+      "max": 6.6,
+      "step": 0.1
+    },
+    {
+      "name": "Na",
+      "kind": "number",
+      "default": 141.0,
+      "min": 128.0,
+      "max": 156.0,
+      "step": 1
+    },
+    {
+      "name": "WBC",
+      "kind": "number",
+      "default": 7100.0,
+      "min": 3700.0,
+      "max": 18000.0,
+      "step": 1
+    },
+    {
+      "name": "Lymph",
+      "kind": "number",
+      "default": 32.0,
+      "min": 7.0,
+      "max": 60.0,
+      "step": 1
+    },
+    {
+      "name": "Neut",
+      "kind": "number",
+      "default": 60.0,
+      "min": 32.0,
+      "max": 89.0,
+      "step": 1
+    },
+    {
+      "name": "PLT",
+      "kind": "number",
+      "default": 210.0,
+      "min": 25.0,
+      "max": 742.0,
+      "step": 1
+    },
+    {
+      "name": "EF-TTE",
+      "kind": "number",
+      "default": 50.0,
+      "min": 15.0,
+      "max": 60.0,
+      "step": 1
+    },
+    {
+      "name": "Region RWMA",
+      "kind": "number",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 4.0,
+      "step": 1
+    },
+    {
+      "name": "VHD",
+      "kind": "select",
+      "options": [
+        "N",
+        "mild",
+        "Severe",
+        "Moderate"
+      ],
+      "default": "mild"
+    }
+  ],
+  "count": 54
+}

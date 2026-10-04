@@ -1,0 +1,26 @@
+{
+  "dataset_source": "UCI Extension of Z-Alizadeh Sani, dataset 411",
+  "dataset_url": "https://archive.ics.uci.edu/dataset/411/extention%2Bof%2Bz%2B",
+  "dataset_doi": "10.24432/C5461K",
+  "rows": 303,
+  "feature_count": 54,
+  "target_columns": {
+    "CAD": "Cath",
+    "LAD": "LAD",
+    "LCX": "LCX",
+    "RCA": "RCA"
+  },
+  "target_definitions": {
+    "CAD": "Overall CAD status",
+    "LAD": "LAD stenosis status",
+    "LCX": "LCX stenosis status",
+    "RCA": "RCA stenosis status"
+  },
+  "leakage_excluded_from_all_tasks": [
+    "LAD",
+    "LCX",
+    "RCA",
+    "Cath"
+  ],
+  "clinical_note": "This is a research/hackathon prototype; metrics are not clinical validation."
+}
