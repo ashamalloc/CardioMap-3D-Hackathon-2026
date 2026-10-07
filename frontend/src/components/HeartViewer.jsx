@@ -1,184 +1,458 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
-const vessels = {
-  LAD: [
-    [-0.05, 0.12, 0.25], [-0.02, 0.04, 0.30], [0.02, -0.06, 0.29], [0.03, -0.16, 0.24], [0.02, -0.25, 0.17],
-  ],
-  LCX: [
-    [0.02, 0.20, 0.15], [0.12, 0.20, 0.16], [0.23, 0.16, 0.12], [0.31, 0.08, 0.08], [0.34, -0.01, 0.06],
-  ],
-  RCA: [
-    [-0.02, 0.18, 0.10], [-0.13, 0.19, 0.08], [-0.23, 0.14, 0.05], [-0.29, 0.05, 0.00], [-0.27, -0.07, -0.03],
-  ],
+const VESSEL_FULL_NAMES = {
+  LAD: 'Left Anterior Descending',
+  LCX: 'Left Circumflex',
+  RCA: 'Right Coronary Artery',
 }
 
+// Medical color scale for stenosis risk probability
 function probabilityColor(prob) {
-  const p = Math.max(0, Math.min(1, prob ?? 0))
-  const c = new THREE.Color()
-  if (p < 0.5) {
-    c.setHSL(0.47, 0.84, 0.54 - p * 0.10)
+  if (prob == null) return new THREE.Color(0x66798c)
+  const p = Math.max(0, Math.min(1, prob))
+  const color = new THREE.Color()
+  if (p < 0.33) {
+    // Low risk: Teal / Emerald green
+    color.setHSL(0.46, 0.85, 0.50)
+  } else if (p < 0.66) {
+    // Intermediate risk: Amber / Gold
+    color.setHSL(0.12, 0.95, 0.52)
   } else {
-    c.setHSL(0.10 - (p - 0.5) * 0.18, 0.90, 0.54)
+    // High risk: Warning Crimson / Red
+    color.setHSL(0.98, 0.88, 0.52)
   }
-  return c
+  return color
 }
 
-export default function HeartViewer({ probabilities = {}, selected, onSelect }) {
-  const mount = useRef(null)
+// Camera angle presets for clinical inspection
+const CAMERA_PRESETS = {
+  reset: {
+    pos: [0.3, 0.2, 2.7],
+    target: [0, 0, 0],
+    label: 'Overview',
+  },
+  LAD: {
+    pos: [0.35, 0.15, 2.65],
+    target: [0.25, 0.05, 0.2],
+    label: 'Anterior (LAD)',
+  },
+  LCX: {
+    pos: [2.55, -0.25, -1.05],
+    target: [0.15, -0.15, 0.0],
+    label: 'Lateral (LCX)',
+  },
+  RCA: {
+    pos: [-2.45, -0.65, 1.35],
+    target: [-0.2, -0.2, 0.15],
+    label: 'Right/Inferior (RCA)',
+  },
+}
 
+export default function HeartViewer({ probabilities = {}, selected = 'LAD', onSelect }) {
+  const mount = useRef(null)
+  const [loading, setLoading] = useState(true)
+  const [loadingText, setLoadingText] = useState('Loading 3D Anatomy...')
+  const [heartMode, setHeartMode] = useState('translucent') // 'translucent', 'xray', 'solid', 'hidden'
+  const [hoveredVessel, setHoveredVessel] = useState(null)
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
+
+  // References to keep Three.js entities accessible across renders
+  const sceneRef = useRef(null)
+  const cameraRef = useRef(null)
+  const controlsRef = useRef(null)
+  const heartMeshRef = useRef(null)
+  const vesselMeshesRef = useRef({})
+  const targetCamPosRef = useRef(new THREE.Vector3(...CAMERA_PRESETS.reset.pos))
+  const targetCamLookRef = useRef(new THREE.Vector3(...CAMERA_PRESETS.reset.target))
+  const isTransitioningRef = useRef(false)
+
+  // Camera preset trigger
+  const moveToPreset = useCallback((presetKey) => {
+    const preset = CAMERA_PRESETS[presetKey]
+    if (!preset || !cameraRef.current || !controlsRef.current) return
+    targetCamPosRef.current.set(...preset.pos)
+    targetCamLookRef.current.set(...preset.target)
+    isTransitioningRef.current = true
+  }, [])
+
+  // Update vessel colors and emission when probabilities or selected changes
+  useEffect(() => {
+    Object.entries(vesselMeshesRef.current).forEach(([name, mesh]) => {
+      if (!mesh || !mesh.material) return
+      const prob = probabilities[name]
+      const col = probabilityColor(prob)
+      const isSelected = selected === name
+
+      mesh.material.color.copy(col)
+      mesh.material.emissive.copy(col)
+      mesh.material.emissiveIntensity = isSelected ? 0.75 : 0.22
+    })
+  }, [probabilities, selected])
+
+  // Update heart opacity when heartMode changes
+  useEffect(() => {
+    if (!heartMeshRef.current) return
+    const mat = heartMeshRef.current.material
+    if (!mat) return
+
+    if (heartMode === 'hidden') {
+      heartMeshRef.current.visible = false
+    } else {
+      heartMeshRef.current.visible = true
+      let opacity = 0.65
+      if (heartMode === 'xray') opacity = 0.28
+      if (heartMode === 'solid') opacity = 0.98
+
+      mat.transparent = opacity < 0.95
+      mat.opacity = opacity
+      mat.depthWrite = opacity > 0.9
+      mat.needsUpdate = true
+    }
+  }, [heartMode])
+
+
+  // Mount Three.js canvas & load models
   useEffect(() => {
     const el = mount.current
+    if (!el) return
+
     const scene = new THREE.Scene()
+    sceneRef.current = scene
     scene.background = new THREE.Color('#07101d')
 
     const camera = new THREE.PerspectiveCamera(45, el.clientWidth / el.clientHeight, 0.1, 100)
-    camera.position.set(0.05, 0.15, 2.55)
+    camera.position.set(...CAMERA_PRESETS.reset.pos)
+    cameraRef.current = camera
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8))
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(el.clientWidth, el.clientHeight)
     renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.2
     el.appendChild(renderer.domElement)
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.8)
-    scene.add(ambient)
-    const key = new THREE.DirectionalLight(0xaed4ff, 2.3)
-    key.position.set(2, 3, 4)
-    scene.add(key)
-    const fill = new THREE.PointLight(0x64e7d8, 14, 7)
-    fill.position.set(-2, -1, 2)
-    scene.add(fill)
+    // Lighting setup
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4)
+    scene.add(ambientLight)
+
+    const keyLight = new THREE.DirectionalLight(0xdbeafe, 2.6)
+    keyLight.position.set(3, 4, 4)
+    scene.add(keyLight)
+
+    const fillLight = new THREE.DirectionalLight(0x7dd3fc, 1.6)
+    fillLight.position.set(-3, -1, 3)
+    scene.add(fillLight)
+
+    const rimLight = new THREE.DirectionalLight(0xf472b6, 1.2)
+    rimLight.position.set(0, 4, -4)
+    scene.add(rimLight)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
-    controls.minDistance = 1.7
-    controls.maxDistance = 4.5
-    controls.target.set(0, 0.02, 0.1)
+    controls.dampingFactor = 0.05
+    controls.minDistance = 1.2
+    controls.maxDistance = 5.0
+    controls.target.set(...CAMERA_PRESETS.reset.target)
+    controlsRef.current = controls
 
-    const anatomy = new THREE.Group()
-    scene.add(anatomy)
+    // Anatomical root group
+    const anatomyGroup = new THREE.Group()
+    scene.add(anatomyGroup)
 
-    const torso = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.84, 1.22, 12, 32),
-      new THREE.MeshPhysicalMaterial({ color: 0x172435, transparent: true, opacity: 0.35, roughness: 0.55, metalness: 0.05 })
-    )
-    torso.scale.set(0.88, 1.08, 0.52)
-    torso.position.y = -0.08
-    anatomy.add(torso)
 
-    const shoulders = new THREE.Group()
-    for (const x of [-0.72, 0.72]) {
-      const s = new THREE.Mesh(
-        new THREE.SphereGeometry(0.32, 24, 24),
-        new THREE.MeshStandardMaterial({ color: 0x172435, transparent: true, opacity: 0.28 })
-      )
-      s.position.set(x, 0.52, 0)
-      s.scale.set(1.35, 0.76, 0.65)
-      shoulders.add(s)
-    }
-    anatomy.add(shoulders)
+    // Heart + Vessels Group
+    const heartAssembly = new THREE.Group()
+    anatomyGroup.add(heartAssembly)
 
-    const heartGroup = new THREE.Group()
-    heartGroup.rotation.z = -0.13
-    heartGroup.position.set(0.03, 0.10, 0.23)
-    anatomy.add(heartGroup)
+    // Raw models container (pre-centered and re-oriented)
+    const orientedGroup = new THREE.Group()
+    // Body coordinate to Three.js conversion:
+    // Superior (Body Z) -> Up (Three.js +Y)
+    // Anterior (Body -Y) -> Front (Three.js +Z)
+    orientedGroup.rotation.x = -Math.PI / 2
+    // Slight anatomical tilt around long cardiac axis
+    orientedGroup.rotation.z = -0.12
+    orientedGroup.scale.setScalar(0.019) // 118mm -> ~2.24 units in scene
+    heartAssembly.add(orientedGroup)
 
-    for (const [x, y, z, s] of [[-0.13, 0.05, 0, 0.28], [0.15, 0.03, 0.02, 0.33], [0.02, -0.19, 0.02, 0.36]]) {
-      const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.5, 28, 28),
-        new THREE.MeshPhysicalMaterial({ color: 0x7d273c, roughness: 0.72, metalness: 0.02 })
-      )
-      m.position.set(x, y, z)
-      m.scale.set(s, s * 1.12, s * 0.74)
-      heartGroup.add(m)
-    }
+    const rawModelGroup = new THREE.Group()
+    // Center of mass offset calculated from GLB accessors:
+    rawModelGroup.position.set(-22.8877, 123.9158, -1233.9350)
+    orientedGroup.add(rawModelGroup)
 
-    const aortaCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0.02, 0.32, 0.12), new THREE.Vector3(0.08, 0.48, 0.14), new THREE.Vector3(0.18, 0.60, 0.16),
-      new THREE.Vector3(0.30, 0.56, 0.12), new THREE.Vector3(0.34, 0.44, 0.10),
-    ])
-    const aorta = new THREE.Mesh(
-      new THREE.TubeGeometry(aortaCurve, 32, 0.085, 12, false),
-      new THREE.MeshStandardMaterial({ color: 0x9e5365, transparent: true, opacity: 0.78 })
-    )
-    anatomy.add(aorta)
-
+    const loader = new GLTFLoader()
     const selectable = []
-    const vesselGroups = {}
-    Object.entries(vessels).forEach(([name, coords]) => {
-      const group = new THREE.Group()
-      group.name = name
-      const points = coords.map(([x, y, z]) => new THREE.Vector3(x, y, z + 0.32))
-      const curve = new THREE.CatmullRomCurve3(points)
-      const prob = probabilities[name]
-      const displayColor = prob == null ? new THREE.Color(0x66798c) : probabilityColor(prob)
-      const material = new THREE.MeshStandardMaterial({ color: displayColor, emissive: displayColor, emissiveIntensity: selected === name ? 0.60 : 0.16, roughness: 0.40 })
-      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 48, selected === name ? 0.034 : 0.024, 10, false), material)
-      tube.userData.vessel = name
-      group.add(tube)
-      selectable.push(tube)
+    let isDisposed = false
 
-      coords.forEach(([x, y, z], i) => {
-        const node = new THREE.Mesh(
-          new THREE.SphereGeometry(selected === name ? 0.052 : 0.042, 18, 18),
-          new THREE.MeshStandardMaterial({ color: displayColor, emissive: displayColor, emissiveIntensity: 0.35 })
-        )
-        node.position.set(x, y, z + 0.32)
-        node.userData.vessel = name
-        group.add(node)
-        selectable.push(node)
-        if (i === coords.length - 1) {
-          node.scale.setScalar(1.3)
-        }
+    const modelFiles = [
+      { name: 'heart', url: '/models/heart.glb' },
+      { name: 'LAD', url: '/models/LAD.glb' },
+      { name: 'LCX', url: '/models/LCX.glb' },
+      { name: 'RCA', url: '/models/RCA.glb' },
+    ]
+
+    setLoadingText('Loading anatomical meshes (Heart, LAD, LCX, RCA)...')
+
+    Promise.all(
+      modelFiles.map(
+        (item) =>
+          new Promise((resolve, reject) => {
+            loader.load(
+              item.url,
+              (gltf) => resolve({ name: item.name, gltf }),
+              undefined,
+              (err) => reject(new Error(`Failed to load ${item.name}: ${err.message}`))
+            )
+          })
+      )
+    )
+      .then((loadedResults) => {
+        if (isDisposed) return
+
+        loadedResults.forEach(({ name, gltf }) => {
+          const root = gltf.scene
+
+          root.traverse((child) => {
+            if (child.isMesh) {
+              // Ensure smooth normals for realistic PBR lighting
+              child.geometry.computeVertexNormals()
+
+              if (name === 'heart') {
+                // Heart Myocardium Material
+                const heartMat = new THREE.MeshPhysicalMaterial({
+                  color: new THREE.Color('#781e30'),
+                  roughness: 0.55,
+                  metalness: 0.05,
+                  clearcoat: 0.35,
+                  clearcoatRoughness: 0.25,
+                  transparent: true,
+                  opacity: 0.65,
+                  depthWrite: true,
+                  polygonOffset: true,
+                  polygonOffsetFactor: 1,
+                  polygonOffsetUnits: 1,
+                })
+                child.material = heartMat
+                heartMeshRef.current = child
+              } else {
+                // Coronary Artery Meshes (LAD, LCX, RCA)
+                const prob = probabilities[name]
+                const color = probabilityColor(prob)
+                const isSelected = selected === name
+
+                const vesselMat = new THREE.MeshStandardMaterial({
+                  color: color,
+                  emissive: color,
+                  emissiveIntensity: isSelected ? 0.75 : 0.22,
+                  roughness: 0.35,
+                  metalness: 0.12,
+                })
+
+                child.material = vesselMat
+                child.userData.vessel = name
+                vesselMeshesRef.current[name] = child
+                selectable.push(child)
+              }
+            }
+          })
+
+          rawModelGroup.add(root)
+        })
+
+        setLoading(false)
       })
-      vesselGroups[name] = group
-      anatomy.add(group)
-    })
+      .catch((err) => {
+        console.error('Error loading 3D heart models:', err)
+        setLoadingText('Error loading 3D models: ' + err.message)
+      })
 
+    // Pointer events: Raycasting for hover and click
     const raycaster = new THREE.Raycaster()
     const mouse = new THREE.Vector2()
-    const handlePointer = (event) => {
+
+    const onPointerMove = (e) => {
       const rect = renderer.domElement.getBoundingClientRect()
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
       raycaster.setFromCamera(mouse, camera)
-      const hit = raycaster.intersectObjects(selectable, false)[0]
-      if (hit?.object?.userData?.vessel) onSelect?.(hit.object.userData.vessel)
+      const hits = raycaster.intersectObjects(selectable, false)
+
+      if (hits.length > 0 && hits[0].object?.userData?.vessel) {
+        const vessel = hits[0].object.userData.vessel
+        setHoveredVessel(vessel)
+        setTooltipPos({ x: e.clientX - rect.left + 15, y: e.clientY - rect.top + 15 })
+        renderer.domElement.style.cursor = 'pointer'
+      } else {
+        setHoveredVessel(null)
+        renderer.domElement.style.cursor = 'default'
+      }
     }
-    renderer.domElement.addEventListener('pointerdown', handlePointer)
+
+    const onPointerDown = (e) => {
+      const rect = renderer.domElement.getBoundingClientRect()
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+      raycaster.setFromCamera(mouse, camera)
+      const hits = raycaster.intersectObjects(selectable, false)
+
+      if (hits.length > 0 && hits[0].object?.userData?.vessel) {
+        const vessel = hits[0].object.userData.vessel
+        onSelect?.(vessel)
+      }
+    }
+
+    renderer.domElement.addEventListener('pointermove', onPointerMove)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
 
     const onResize = () => {
+      if (!el) return
       camera.aspect = el.clientWidth / el.clientHeight
       camera.updateProjectionMatrix()
       renderer.setSize(el.clientWidth, el.clientHeight)
     }
     window.addEventListener('resize', onResize)
 
-    let frame = 0
+    // Animation render loop
+    let animId = 0
+    let clock = new THREE.Clock()
+
     const animate = () => {
+      animId = requestAnimationFrame(animate)
+      const elapsed = clock.getElapsedTime()
+
+      // Smooth camera interpolation when switching views
+      if (isTransitioningRef.current) {
+        camera.position.lerp(targetCamPosRef.current, 0.08)
+        controls.target.lerp(targetCamLookRef.current, 0.08)
+        if (
+          camera.position.distanceTo(targetCamPosRef.current) < 0.01 &&
+          controls.target.distanceTo(targetCamLookRef.current) < 0.01
+        ) {
+          isTransitioningRef.current = false
+        }
+      }
+
+      // Subtle emissive pulse on selected vessel
+      if (selected && vesselMeshesRef.current[selected]) {
+        const selectedMesh = vesselMeshesRef.current[selected]
+        if (selectedMesh.material) {
+          const pulse = 0.65 + Math.sin(elapsed * 4.5) * 0.25
+          selectedMesh.material.emissiveIntensity = pulse
+        }
+      }
+
       controls.update()
-      frame = requestAnimationFrame(animate)
       renderer.render(scene, camera)
     }
     animate()
 
     return () => {
-      cancelAnimationFrame(frame)
+      isDisposed = true
+      cancelAnimationFrame(animId)
       window.removeEventListener('resize', onResize)
-      renderer.domElement.removeEventListener('pointerdown', handlePointer)
+      renderer.domElement.removeEventListener('pointermove', onPointerMove)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       controls.dispose()
       renderer.dispose()
-      el.removeChild(renderer.domElement)
-      Object.values(vesselGroups).forEach(g => {
-        g.traverse(o => {
-          if (o.geometry) o.geometry.dispose()
-          if (o.material) o.material.dispose()
-        })
-      })
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement)
+      }
     }
-  }, [probabilities, selected, onSelect])
+  }, []) // Mount once
 
-  return <div className="viewer" ref={mount}><div className="viewer-hint">Drag to rotate · scroll to zoom · click a vessel</div></div>
+  const hoveredProb = hoveredVessel ? probabilities[hoveredVessel] : null
+
+  return (
+    <div className="viewer" ref={mount}>
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="viewer-loading-overlay">
+          <div className="loading-spinner"></div>
+          <div className="loading-title">Interactive 3D Anatomical Map</div>
+          <div className="loading-text">{loadingText}</div>
+        </div>
+      )}
+
+      {/* Top Left Navigation Hint */}
+      <div className="viewer-hint">
+        Click vessel or buttons to inspect · Drag to rotate · Scroll to zoom
+      </div>
+
+      {/* Top Right Anatomical View Presets */}
+      <div className="viewer-controls-top">
+        <div className="preset-group">
+          <span className="preset-label">View:</span>
+          {Object.entries(CAMERA_PRESETS).map(([key, item]) => (
+            <button
+              key={key}
+              className={`preset-btn ${selected === key ? 'active' : ''}`}
+              onClick={() => {
+                moveToPreset(key)
+                if (key !== 'reset') onSelect?.(key)
+              }}
+              title={`Switch camera to ${item.label}`}
+            >
+              {key === 'reset' ? 'Overview' : key}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Bottom Viewer Controls (Heart Translucency) */}
+      <div className="viewer-controls-bottom">
+        <div className="mode-group">
+          <span className="control-label">Myocardium:</span>
+          <button
+            className={`mode-btn ${heartMode === 'translucent' ? 'active' : ''}`}
+            onClick={() => setHeartMode('translucent')}
+            title="Semi-transparent cardiac tissue"
+          >
+            Translucent
+          </button>
+          <button
+            className={`mode-btn ${heartMode === 'xray' ? 'active' : ''}`}
+            onClick={() => setHeartMode('xray')}
+            title="X-Ray mode for deep vessel clarity"
+          >
+            X-Ray
+          </button>
+          <button
+            className={`mode-btn ${heartMode === 'solid' ? 'active' : ''}`}
+            onClick={() => setHeartMode('solid')}
+            title="Solid anatomical heart"
+          >
+            Solid
+          </button>
+          <button
+            className={`mode-btn ${heartMode === 'hidden' ? 'active' : ''}`}
+            onClick={() => setHeartMode('hidden')}
+            title="Hide heart muscle to display arteries only"
+          >
+            Arteries Only
+          </button>
+        </div>
+      </div>
+
+      {/* Hover Tooltip */}
+      {hoveredVessel && (
+        <div
+          className="viewer-tooltip"
+          style={{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }}
+        >
+          <div className="tooltip-title">{hoveredVessel}</div>
+          <div className="tooltip-sub">{VESSEL_FULL_NAMES[hoveredVessel]}</div>
+          <div className="tooltip-risk">
+            Risk:{' '}
+            <b>{hoveredProb != null ? `${(hoveredProb * 100).toFixed(1)}%` : 'Not evaluated'}</b>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
