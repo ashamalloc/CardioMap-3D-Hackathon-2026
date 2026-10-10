@@ -83,7 +83,7 @@ def compute_metrics(y_true, y_prob, threshold: float = 0.5) -> dict[str, float |
     return result
 
 
-def build_schema(X: pd.DataFrame, numeric: list[str], categorical: list[str]) -> dict[str, Any]:
+def build_schema(X: pd.DataFrame, numeric: list[str]) -> dict[str, Any]:
     fields = []
     for col in X.columns:
         s = X[col]
@@ -113,8 +113,6 @@ def build_schema(X: pd.DataFrame, numeric: list[str], categorical: list[str]) ->
 def build_explain_map(pipeline: Pipeline) -> dict[str, str]:
     pre = pipeline.named_steps["preprocess"]
     names = pre.get_feature_names_out()
-    numeric = list(pre.transformers_[0][2])
-    cat_pipe = pre.transformers_[1][1]
     cat_cols = list(pre.transformers_[1][2])
     mapping: dict[str, str] = {}
     for out_name in names:
@@ -132,7 +130,7 @@ def build_explain_map(pipeline: Pipeline) -> dict[str, str]:
 
 
 def fit_one_target(X: pd.DataFrame, y: pd.Series, target: str, output_dir: Path) -> FitResult:
-    pipeline, numeric, categorical = make_pipeline(X)
+    pipeline, numeric, _ = make_pipeline(X)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=42, stratify=y
     )
@@ -160,21 +158,41 @@ def fit_one_target(X: pd.DataFrame, y: pd.Series, target: str, output_dir: Path)
 
     out_path = output_dir / f"{target.lower()}_model.joblib"
     joblib.dump(pipeline, out_path)
-    schema = build_schema(X, numeric, categorical)
+    schema = build_schema(X, numeric)
     explain_map = build_explain_map(pipeline)
     return FitResult(pipeline=pipeline, metrics=metrics, schema=schema, explain_map=explain_map)
 
 
 def train_all(X: pd.DataFrame, ys: dict[str, pd.Series], output_dir: Path) -> dict[str, FitResult]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    imported_lcx_model = output_dir / "lcx_xgb.json"
+    preserved_lcx_metrics: dict[str, Any] | None = None
+    if imported_lcx_model.is_file():
+        metrics_path = output_dir / "metrics.json"
+        if not metrics_path.is_file():
+            raise FileNotFoundError(
+                f"Cannot preserve imported LCX model without its metrics file: {metrics_path}"
+            )
+        with metrics_path.open("r", encoding="utf-8") as f:
+            existing_metrics = json.load(f)
+        if "LCX" not in existing_metrics:
+            raise ValueError(f"Metrics file does not contain the imported LCX model report: {metrics_path}")
+        preserved_lcx_metrics = existing_metrics["LCX"]
+
     results = {}
     for target in ["CAD", "LAD", "LCX", "RCA"]:
+        if target == "LCX" and preserved_lcx_metrics is not None:
+            continue
         results[target] = fit_one_target(X, ys[target], target, output_dir)
-    # Common schema because all four tasks use the same leakage-safe feature space.
+
+    # The three CardioMap Random Forest models share the same leakage-safe schema.
     with (output_dir / "schema.json").open("w", encoding="utf-8") as f:
         json.dump(results["CAD"].schema, f, indent=2)
+    metrics = {k: v.metrics for k, v in results.items()}
+    if preserved_lcx_metrics is not None:
+        metrics["LCX"] = preserved_lcx_metrics
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as f:
-        json.dump({k: v.metrics for k, v in results.items()}, f, indent=2)
+        json.dump(metrics, f, indent=2)
     with (output_dir / "explain_maps.json").open("w", encoding="utf-8") as f:
         json.dump({k: v.explain_map for k, v in results.items()}, f, indent=2)
     return results

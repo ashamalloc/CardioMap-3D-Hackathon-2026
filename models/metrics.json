@@ -191,30 +191,18 @@
     "positive_rate": 0.3927392739273927,
     "holdout": {
       "accuracy": 0.6721311475409836,
-      "precision": 0.625,
-      "recall": 0.4166666666666667,
-      "f1": 0.5,
-      "roc_auc": 0.7105855855855856
+      "precision": 0.583,
+      "recall": 0.583,
+      "f1": 0.583,
+      "roc_auc": 0.759
     },
-    "cv5_mean": {
-      "accuracy": 0.6817176870748299,
-      "precision": 0.6628389154704944,
-      "recall": 0.42105263157894735,
-      "f1": 0.5075365833939688,
-      "roc_auc": 0.7184633998790079
-    },
-    "cv5_std": {
-      "accuracy": 0.03189807089376233,
-      "precision": 0.0734456254614414,
-      "recall": 0.0665742665298606,
-      "f1": 0.039982318715858584,
-      "roc_auc": 0.07077543945683662
-    },
+    "cv_auc_train": 0.704,
     "split": {
       "test_size": 0.2,
       "random_state": 42
     },
-    "model": "RandomForestClassifier",
+    "model": "XGBClassifier",
+    "model_source": "proj/cad_models/xgb_LCX.json",
     "leakage_excluded": [
       "LAD",
       "LCX",
@@ -223,8 +211,6 @@
     ],
     "features_used": [
       "Age",
-      "Weight",
-      "Length",
       "Sex",
       "BMI",
       "DM",
@@ -232,10 +218,10 @@
       "Current Smoker",
       "EX-Smoker",
       "FH",
-      "Obesity",
       "CRF",
       "CVA",
       "Airway disease",
+      "Thyroid Disease",
       "CHF",
       "DLP",
       "BP",
@@ -250,7 +236,6 @@
       "Function Class",
       "Atypical",
       "Nonanginal",
-      "Exertional CP",
       "LowTH Ang",
       "Q Wave",
       "St Elevation",

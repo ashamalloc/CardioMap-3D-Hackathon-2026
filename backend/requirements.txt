@@ -7,4 +7,5 @@ openpyxl>=3.1,<4.0
 joblib>=1.4,<2.0
 ucimlrepo>=0.0.7,<1.0
 shap>=0.46,<0.51
+xgboost>=2.1,<4.0
 pydantic>=2.10,<3.0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -8,13 +9,18 @@ import joblib
 import numpy as np
 import pandas as pd
 import shap
+import xgboost as xgb
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from xgboost import XGBClassifier
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = ROOT / "models"
+PROJECT_LCX_MODEL = MODEL_DIR / "lcx_xgb.json"
 TARGETS = ["CAD", "LAD", "LCX", "RCA"]
+PROJECT_LCX_LOG_FEATURES = {"FBS", "TG", "WBC", "PLT"}
+PROJECT_LCX_MISSING_DEFAULTS = {"Thyroid Disease": 0.0}
 
 app = FastAPI(
     title="CardioMap 3D API",
@@ -41,6 +47,13 @@ def _load_artifacts() -> None:
     MODELS = {}
     EXPLAINERS = {}
     for target in TARGETS:
+        if target == "LCX":
+            if PROJECT_LCX_MODEL.exists():
+                model = XGBClassifier()
+                model.load_model(PROJECT_LCX_MODEL)
+                MODELS[target] = model
+            continue
+
         path = MODEL_DIR / f"{target.lower()}_model.joblib"
         if path.exists():
             MODELS[target] = joblib.load(path)
@@ -84,20 +97,80 @@ def _require_models() -> None:
 
 
 def _feature_frame(features: dict[str, Any]) -> pd.DataFrame:
-    names = [f["name"] for f in SCHEMA.get("fields", [])]
+    fields = SCHEMA.get("fields", [])
+    names = [field["name"] for field in fields]
+    unknown_fields = set(features).difference(names)
+    if unknown_fields:
+        raise ValueError(f"Unknown feature(s): {', '.join(sorted(unknown_fields))}")
+
     row: dict[str, Any] = {}
-    for field in SCHEMA.get("fields", []):
+    for field in fields:
         name = field["name"]
         value = features.get(name, field.get("default"))
+        if value is None or value == "":
+            value = field.get("default")
+
         if field.get("kind") == "number":
             try:
-                row[name] = float(value)
-            except (TypeError, ValueError):
-                row[name] = field.get("default")
+                number = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"'{name}' must be a number") from exc
+            if not math.isfinite(number):
+                raise ValueError(f"'{name}' must be a finite number")
+            row[name] = number
         else:
-            row[name] = str(value) if value is not None else field.get("default")
+            category = str(value)
+            options = field.get("options")
+            if options and category not in options:
+                raise ValueError(
+                    f"'{name}' must be one of: {', '.join(options)}"
+                )
+            row[name] = category
     # Keep exact training column order.
     return pd.DataFrame([row], columns=names)
+
+
+def _project_lcx_feature_frame(X: pd.DataFrame) -> pd.DataFrame:
+    model = MODELS["LCX"]
+    feature_names = model.get_booster().feature_names
+    if not feature_names:
+        raise RuntimeError("The project LCX model has no saved feature names.")
+
+    row: dict[str, float] = {}
+    category_codes = {
+        "Sex": {"Fmale": 0, "Male": 1},
+        "BBB": {"N": 0, "LBBB": 1, "RBBB": 2},
+        "VHD": {"N": 0, "mild": 1, "Moderate": 2, "Severe": 3},
+    }
+    for name in feature_names:
+        if name in X.columns:
+            value = X.iloc[0][name]
+        elif name in PROJECT_LCX_MISSING_DEFAULTS:
+            value = PROJECT_LCX_MISSING_DEFAULTS[name]
+        else:
+            raise RuntimeError(f"CardioMap has no input/default for project LCX feature '{name}'.")
+
+        if name in category_codes:
+            try:
+                value = category_codes[name][str(value)]
+            except KeyError as exc:
+                raise ValueError(f"'{name}' has an unsupported value") from exc
+        elif isinstance(value, str) and value in {"Y", "N"}:
+            value = 1 if value == "Y" else 0
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"'{name}' must be a number or supported category") from exc
+        if not math.isfinite(value):
+            raise ValueError(f"'{name}' must be a finite number")
+        if name in PROJECT_LCX_LOG_FEATURES:
+            if value <= 0:
+                raise ValueError(f"'{name}' must be greater than 0")
+            value = math.log(value)
+        row[name] = value
+
+    return pd.DataFrame([row], columns=feature_names)
 
 
 def _risk_band(prob: float) -> str:
@@ -109,6 +182,22 @@ def _risk_band(prob: float) -> str:
 
 
 def _shap_contributions(target: str, X: pd.DataFrame) -> list[dict[str, Any]]:
+    if target == "LCX":
+        model = MODELS[target]
+        contributions = model.get_booster().predict(
+            xgb.DMatrix(X, feature_names=list(X.columns)),
+            pred_contribs=True,
+        )[0][:-1]
+        order = np.argsort(-np.abs(contributions))[:10]
+        return [
+            {
+                "feature": X.columns[index],
+                "contribution": round(float(contributions[index]), 5),
+                "direction": "increases" if contributions[index] >= 0 else "decreases",
+            }
+            for index in order
+        ]
+
     explainer = EXPLAINERS.get(target)
     model = MODELS[target]
     if explainer is None:
@@ -142,6 +231,17 @@ def _shap_contributions(target: str, X: pd.DataFrame) -> list[dict[str, Any]]:
 
 def _global_importance(target: str) -> list[dict[str, Any]]:
     model = MODELS[target]
+    if target == "LCX":
+        feature_names = model.get_booster().feature_names
+        if not feature_names:
+            raise RuntimeError("The project LCX model has no saved feature names.")
+        scores = model.get_booster().get_score(importance_type="gain")
+        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)[:12]
+        return [
+            {"feature": feature, "importance": round(float(value), 5)}
+            for feature, value in ranked
+        ]
+
     clf = model.named_steps["model"]
     pre = model.named_steps["preprocess"]
     names = list(pre.get_feature_names_out())
@@ -186,20 +286,26 @@ def importance() -> dict[str, Any]:
 @app.post("/api/predict")
 def predict(req: PredictRequest) -> dict[str, Any]:
     _require_models()
-    X = _feature_frame(req.features)
+    try:
+        X = _feature_frame(req.features)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     predictions: dict[str, Any] = {}
     for target in TARGETS:
         model = MODELS[target]
-        probability = float(model.predict_proba(X)[0, 1])
+        try:
+            model_X = _project_lcx_feature_frame(X) if target == "LCX" else X
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        probability = float(model.predict_proba(model_X)[0, 1])
         predictions[target] = {
             "probability": round(probability, 4),
             "percent": round(probability * 100, 1),
             "status": "Positive" if probability >= 0.5 else "Negative",
             "band": _risk_band(probability),
-            "explanations": _shap_contributions(target, X),
+            "explanations": _shap_contributions(target, model_X),
         }
 
-    cad = predictions["CAD"]["probability"]
     vessel_probs = {v: predictions[v]["probability"] for v in ["LAD", "LCX", "RCA"]}
     return {
         "overall_cad": predictions["CAD"],
@@ -207,5 +313,5 @@ def predict(req: PredictRequest) -> dict[str, Any]:
         "overall_risk_note": "Overall risk score is the model-estimated CAD likelihood; it is not a validated clinical risk score.",
         "highest_vessel": max(vessel_probs, key=vessel_probs.get),
         "patient_features": X.iloc[0].to_dict(),
-        "model_version": "CardioMap RF v1",
+        "model_version": "CardioMap RF v1 + proj XGBoost LCX",
     }

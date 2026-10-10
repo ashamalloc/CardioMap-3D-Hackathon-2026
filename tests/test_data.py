@@ -12,7 +12,7 @@ def test_leakage_columns_removed():
         'Cath': [0, 1, 1, 1],
         'CAD': ['Normal', 'CAD', 'CAD', 'CAD'],
     })
-    X, ys, cols = prepare_dataset(df)
+    X, ys, _ = prepare_dataset(df)
     assert set(['LAD','LCX','RCA','Cath']).isdisjoint(set(X.columns))
     assert 'Age' in X.columns
     assert ys['CAD'].tolist() == [0, 1, 1, 1]
