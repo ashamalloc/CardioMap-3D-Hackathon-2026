@@ -1,0 +1,110 @@
+{
+  "Cath": {
+    "label": "Overall CAD",
+    "n_train": 242,
+    "n_test": 61,
+    "positive_rate": 0.713,
+    "best_params": {
+      "colsample_bytree": 0.6,
+      "learning_rate": 0.1,
+      "max_depth": 2,
+      "min_child_weight": 1,
+      "n_estimators": 250,
+      "subsample": 1.0
+    },
+    "cv_auc_train": 0.927,
+    "test_auc": 0.87,
+    "test_accuracy": 0.82,
+    "test_precision": 0.864,
+    "test_recall_sensitivity": 0.884,
+    "test_specificity": 0.667,
+    "test_f1": 0.874,
+    "confusion_matrix": {
+      "TN": 12,
+      "FP": 6,
+      "FN": 5,
+      "TP": 38
+    }
+  },
+  "LAD": {
+    "label": "LAD stenosis",
+    "n_train": 242,
+    "n_test": 61,
+    "positive_rate": 0.584,
+    "best_params": {
+      "colsample_bytree": 0.9,
+      "learning_rate": 0.03,
+      "max_depth": 3,
+      "min_child_weight": 1,
+      "n_estimators": 100,
+      "subsample": 0.8
+    },
+    "cv_auc_train": 0.844,
+    "test_auc": 0.822,
+    "test_accuracy": 0.787,
+    "test_precision": 0.811,
+    "test_recall_sensitivity": 0.833,
+    "test_specificity": 0.72,
+    "test_f1": 0.822,
+    "confusion_matrix": {
+      "TN": 18,
+      "FP": 7,
+      "FN": 6,
+      "TP": 30
+    }
+  },
+  "LCX": {
+    "label": "LCX stenosis",
+    "n_train": 242,
+    "n_test": 61,
+    "positive_rate": 0.393,
+    "best_params": {
+      "colsample_bytree": 0.9,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "min_child_weight": 3,
+      "n_estimators": 250,
+      "subsample": 1.0
+    },
+    "cv_auc_train": 0.704,
+    "test_auc": 0.759,
+    "test_accuracy": 0.672,
+    "test_precision": 0.583,
+    "test_recall_sensitivity": 0.583,
+    "test_specificity": 0.73,
+    "test_f1": 0.583,
+    "confusion_matrix": {
+      "TN": 27,
+      "FP": 10,
+      "FN": 10,
+      "TP": 14
+    }
+  },
+  "RCA": {
+    "label": "RCA stenosis",
+    "n_train": 242,
+    "n_test": 61,
+    "positive_rate": 0.376,
+    "best_params": {
+      "colsample_bytree": 0.6,
+      "learning_rate": 0.1,
+      "max_depth": 4,
+      "min_child_weight": 3,
+      "n_estimators": 250,
+      "subsample": 0.8
+    },
+    "cv_auc_train": 0.708,
+    "test_auc": 0.732,
+    "test_accuracy": 0.672,
+    "test_precision": 0.571,
+    "test_recall_sensitivity": 0.522,
+    "test_specificity": 0.763,
+    "test_f1": 0.545,
+    "confusion_matrix": {
+      "TN": 29,
+      "FP": 9,
+      "FN": 11,
+      "TP": 12
+    }
+  }
+}
