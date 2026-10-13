@@ -8,6 +8,10 @@ import joblib
 import numpy as np
 import pandas as pd
 import shap
+import mysql.connector
+import os
+from dotenv import load_dotenv 
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -15,6 +19,24 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = ROOT / "models"
 TARGETS = ["CAD", "LAD", "LCX", "RCA"]
+load_dotenv()  # Load environment variables from .env file
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME"),
+}
+
+def get_db_connection():
+    return mysql.connector.connect(**DB_CONFIG)
+
+def test_db_connection() -> bool:
+    try:
+        conn = get_db_connection()
+        conn.close()
+        return True
+    except mysql.connector.Error:
+        return False
 
 app = FastAPI(
     title="CardioMap 3D API",
@@ -187,10 +209,13 @@ def importance() -> dict[str, Any]:
 def predict(req: PredictRequest) -> dict[str, Any]:
     _require_models()
     X = _feature_frame(req.features)
+
     predictions: dict[str, Any] = {}
+
     for target in TARGETS:
         model = MODELS[target]
         probability = float(model.predict_proba(X)[0, 1])
+
         predictions[target] = {
             "probability": round(probability, 4),
             "percent": round(probability * 100, 1),
@@ -199,13 +224,53 @@ def predict(req: PredictRequest) -> dict[str, Any]:
             "explanations": _shap_contributions(target, X),
         }
 
-    cad = predictions["CAD"]["probability"]
-    vessel_probs = {v: predictions[v]["probability"] for v in ["LAD", "LCX", "RCA"]}
-    return {
+    vessel_probs = {
+        v: predictions[v]["probability"]
+        for v in ["LAD", "LCX", "RCA"]
+    }
+
+    highest_vessel = max(vessel_probs, key=vessel_probs.get)
+
+    result = {
         "overall_cad": predictions["CAD"],
         "vessels": {v: predictions[v] for v in vessel_probs},
-        "overall_risk_note": "Overall risk score is the model-estimated CAD likelihood; it is not a validated clinical risk score.",
-        "highest_vessel": max(vessel_probs, key=vessel_probs.get),
+        "overall_risk_note": (
+            "Overall risk score is the model-estimated CAD likelihood; "
+            "it is not a validated clinical risk score."
+        ),
+        "highest_vessel": highest_vessel,
         "patient_features": X.iloc[0].to_dict(),
         "model_version": "CardioMap RF v1",
     }
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+            INSERT INTO prediction_history
+            (patient_features, prediction_results, highest_vessel, model_version)
+            VALUES (%s, %s, %s, %s)
+        """
+
+        cursor.execute(
+            query,
+            (
+                json.dumps(result["patient_features"], default=str),
+                json.dumps(result),
+                highest_vessel,
+                result["model_version"],
+            ),
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    except mysql.connector.Error as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save prediction to database: {str(e)}",
+        )
+
+    return result
